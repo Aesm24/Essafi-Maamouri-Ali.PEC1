@@ -1,0 +1,690 @@
+---
+title: "Análisis de datos ómicos - PEC1"
+author: "Ali_ESSAFI (GitHub repository URL: https://github.com/Aesm24/Essafi-Maamouri-Ali.PEC1.git)"
+date: "2025-03-23"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r}
+getwd()
+
+```
+
+```{r}
+library(readr)
+library(dplyr)
+library(metabolomicsWorkbenchR)
+```
+
+Cargamos el fichero texto de los resultados del análisis de 12 muestras. 
+
+```{r}
+file_path <-"/home/aloulou/Downloads/ST000002_AN000002.txt"
+
+raw_data <- readLines(file_path)
+
+```
+
+Identificamos las líneas del fichero donde aparecen los resultados del análisis. 
+
+```{r}
+ms_start <- grep("^MS_METABOLITE_DATA_START", raw_data)
+```
+
+```{r}
+ms_end <- grep("^MS_METABOLITE_DATA_END", raw_data)
+```
+
+```{r}
+data_lines <- raw_data[(ms_start + 1):(ms_end - 1)]
+```
+
+Eliminamos las lineas de datos que contengan campos vacíos.
+
+```{r}
+data_lines <- data_lines[data_lines != ""]
+```
+
+Reemplazamos los caracteres de 2 tabs consecutivos que significa la ausencia de valores entre columnas, ya quel formato de dato espera tener valores entre dos tabs. Esto nos permite usar la función read.table.
+
+```{r}
+data_lines <- gsub("\t\t", "\tNA\t", data_lines)
+```
+
+Asignamos un dataframe a los datos léidos. 
+
+```{r}
+data_df <- read.table(text = paste(data_lines, collapse="\n"), header = TRUE, sep = "\t", check.names = FALSE, fill = TRUE)
+
+```
+
+Verificamos si hay datos NA
+
+```{r}
+sum(is.na(data_df))
+```
+Verificamos las columnas y filas del dataframe creado.
+
+```{r}
+head(data_df)
+```
+
+Verificamos el número de columnas en cada línea del dataframe
+
+```{r}
+column_counts <- sapply(strsplit(data_lines, "\t"), length)
+table(column_counts)
+```
+las 144 lineas tienen 13 columnas
+
+```{r}
+head(data_df, 1)
+```
+Extraemos la primera línea que contiene los nombres de las muestras y el tratamiento aplicado a cada una de ellas.
+
+seleccionamos la primera fila excluyendo la primera columna
+
+```{r}
+factores <- data_df[1, -1]
+```
+
+extraemos los metabolitos para luego crear la matriz
+
+```{r}
+metabolites <- data_df[-1, ] 
+```
+
+Creamos la matriz de los resultados.
+
+Eliminamos la primera columna, convertimos cada elemento del dataframe en un dato numérico.
+
+```{r}
+metabolites_matrix <- as.matrix(apply(metabolites[, -1], 2, as.numeric))
+rownames(metabolites_matrix) <- metabolites[, 1]  
+colnames(metabolites_matrix) <- colnames(metabolites)[-1]
+
+```
+
+Verificamos los valores de la la primera fila de la matriz.
+
+```{r}
+metabolites_matrix[1, ]
+```
+Modificamos los nombres de las columnas para incluir la información sobre la condición de transplantación 
+
+```{r}
+colnames(metabolites_matrix)[1:6] <- paste0(colnames(metabolites_matrix)[1:6], "_A")
+colnames(metabolites_matrix)[7:12] <- paste0(colnames(metabolites_matrix)[7:12], "_B")
+```
+
+```{r}
+colnames(metabolites_matrix)
+```
+
+Ya tenemos los nombres de las muestras en la matriz metabolites_matrix con las letras indicando si la muestra ha sido recogida antes, B o después A de la transplantación.
+
+```{r}
+print(factores)
+```
+
+
+```{r}
+str(factores)
+```
+```{r}
+class(factores)
+```
+
+
+```{r}
+muestras<- colnames(factores)
+```
+
+```{r}
+print(muestras)
+```
+Para la metadata de las muestras y para facilitar el análisis, modificamos también los nombres de las muestras añadiendo "_B" a los nombres de muestras de individuos que no habían tenido  transplantación y "_A" de muestras tomadas de individuos que hayan tenido transplantación.
+
+Usamos la función unlist para extraer los valores del dataframe factores en un vector y con la función as.character registramos los valores en formato texto.
+
+```{r}
+vector_factores<- as.character(unlist(factores))
+```
+
+En el vector factores reemplazamos "Transplantation:" por una cadena vacía (empty string)
+
+```{r}
+vector_factores <- gsub("Transplantation:", "", vector_factores)
+```
+
+```{r}
+print(vector_factores)
+```
+Ahora con la función grepl buscamos las palabras After y Before para cambiarlas respectivamente con las etiquetas _A y _B
+
+
+```{r}
+etiquetas_muestras<- ifelse(grepl("After", vector_factores), paste0(muestras, "_A"), paste0(muestras, "_B"))
+
+```
+
+
+```{r}
+print(etiquetas_muestras)
+```
+
+Ahora preparamos el sample_metadata
+
+```{r}
+sample_metadata<- data.frame(
+  Sample = etiquetas_muestras,
+  Transplantation = vector_factores,
+  row.names = etiquetas_muestras
+)
+```
+
+```{r}
+print(sample_metadata)
+```
+
+
+Identificamos la tabla de anotaciones (annotation table) la lista de metadata de metabolitos a partir del fichero texto de raw_data. Los metadata están listados entre METABOLITES_START y METABOLITES_END y resgistramos los datos en un dataframe metadata_df.
+
+```{r}
+metabolite_start <- grep("^METABOLITES_START", raw_data)
+```
+
+```{r}
+metabolite_end <- grep("^METABOLITES_END", raw_data)
+```
+
+```{r}
+annotation_table<- raw_data[(metabolite_start + 1):(metabolite_end  - 1)]
+```
+
+
+```{r}
+annotation_table <- annotation_table[annotation_table != ""]
+```
+
+Buscamos los datos ausentes y ponemos en los campos vacios NA
+```{r}
+annotation_table <- gsub("\t\t", "\tNA\t", annotation_table)
+```
+
+```{r}
+metadata_df <- read.table(text = paste(annotation_table, collapse="\n"), header = TRUE, sep = "\t", check.names = FALSE, fill = TRUE)
+
+```
+
+Preparación del dataframe de metadata del metabolitos: rowData
+
+Para evitar posibles problemas al crear el SummarizedExperiment cambiamos NA por "Unknown"
+
+```{r}
+metadata_df$inchi_key[is.na(metadata_df$inchi_key)] <- "Unknown"
+
+```
+
+
+```{r}
+str(annotation_table )
+```
+```{r}
+str(metadata_df)
+```
+Hacemos una serie de comprobaciones antes de crear el SummarizedExperiment Object 
+
+```{r}
+nrow(metabolites_matrix)
+nrow(metadata_df)
+```
+
+```{r}
+head(rownames(metabolites_matrix))
+head(metadata_df$metabolite_name)
+```
+```{r}
+tail(rownames(metabolites_matrix))
+tail(metadata_df$metabolite_name)
+```
+```{r}
+missing_metabolites <- setdiff(metadata_df$metabolite_name, rownames(metabolites_matrix))
+print(missing_metabolites)
+
+```
+
+```{r}
+metadata_df <- metadata_df[!is.na(metadata_df$metabolite_name), ]
+```
+
+rowData o metadata_df
+```{r}
+metadata_df <- data.frame(
+  metabolite_name = metadata_df$metabolite_name,
+  moverz_quant = metadata_df$moverz_quant,
+  ri = metadata_df$ri,
+  ri_type = metadata_df$ri_type,
+  pubchem_id = metadata_df$pubchem_id,
+  inchi_key = metadata_df$inchi_key,
+  kegg_id = metadata_df$kegg_id,
+  other_id = metadata_df$other_id,
+  other_id_type = metadata_df$other_id_type,
+  row.names = metadata_df$metabolite_name
+)
+```
+
+
+```{r}
+library(SummarizedExperiment)
+```
+
+
+```{r}
+colnames(metabolites_matrix)
+```
+
+```{r}
+print(sample_metadata)
+```
+
+
+```{r}
+SumExp <- SummarizedExperiment(
+  assays = list(counts = metabolites_matrix),
+  colData = sample_metadata,
+  rowData = metadata_df
+)
+
+```
+
+
+
+
+```{r}
+# Verificar si los nombres de las filas entre la matriz de datos y rowData son identicos
+print(identical(rownames(metabolites_matrix), rownames(rowData)))
+
+# Verificar si los nombres de las columnas son identicos entre la matriz de datos y el colData 
+print(identical(colnames(metabolites_matrix), rownames(colData)))
+
+# exponer la lista de los nombres de las filas y de las columnas para evitar posibles problemas, aunque esto ya se ha comprobado antes de crear el SummarizedExperiment Object
+cat("Assay rownames:\n")
+print(rownames(metabolites_matrix))
+
+cat("rowData rownames:\n")
+print(rownames(rowData))
+
+cat("Assay colnames:\n")
+print(colnames(metabolites_matrix))
+
+cat("colData rownames:\n")
+print(rownames(colData))
+```
+
+
+Guardamos el objeto SummarizedExperiment en formato Rda que pasaremos al repositorio de Github ya creado.
+
+```{r}
+save(SumExp, file="SumExp_ST000002_AN000002.Rda")
+```
+
+```{r}
+load("SumExp_ST000002_AN000002.Rda")
+```
+
+
+Visualizamos la matriz de datos:
+
+
+```{r}
+assay(SumExp)
+
+```
+
+Generamos un fichero texto con los niveles de metabolitos obtenidos con el ensayo hecho con 12 muestras (6 antes y 6 después de la transplantación) que pasaremos al repositorio de Github ya creado.
+
+```{r}
+write.table(assay(SumExp), file = "assay_ST000002.txt", sep = "\t", row.names = TRUE, col.names = NA, quote = FALSE)
+```
+
+Hacemos más comprobaciones
+
+```{r}
+print(colData)
+```
+
+```{r}
+colData(SumExp)
+```
+```{r}
+str(colData(SumExp))
+```
+
+
+```{r}
+rowData(SumExp)
+
+```
+Con el script siguiente guardamos 
+
+
+```{r}
+library(knitr)
+library(rmarkdown)
+
+cat(
+"---
+title: 'metabolites_samples_meta'
+output: html_document
+---
+
+
+Este fichero contiene metadatos de los metabolitos analizados 
+
+STUDY_ID: ST000002  
+PROJECT_TITLE: Intestinal Samples II pre/post transplantation  
+PROJECT_TYPE: Human intestinal samples  
+INSTITUTE: University of California, Davis  
+DEPARTMENT: Davis Genome Center  
+LABORATORY: Fiehn  
+LAST_NAME: Fiehn  
+FIRST_NAME: Olivier  
+STUDY_TITLE: Intestinal Samples II pre/post transplantation  
+STUDY_TYPE: MS Analysis  
+LAST_NAME: Hartman  
+FIRST_NAME: Amber  
+NUMBER_GROUPS: 2  
+TOTAL_SUBJECTS: 12  
+SUBJECT_SPECIES: Homo sapiens  
+
+", file = "metabolites_samples_meta.md")
+
+# adjuntamos el primer dataframe de metadata 
+write.table(sample_metadata, file = "metabolites_samples_meta.md", sep = "\t", 
+            row.names = TRUE, col.names = NA, quote = FALSE, append = TRUE)
+
+# añadimos la descripción 
+cat(
+"\n\n**Sample and Instrument Information:**\n
+
+SAMPLE_TYPE: Tissue  
+TR:TREATMENT_PROTOCOL_COMMENTS: Before transplantation | After transplantation  
+SP:EXTRACTION_METHOD: Extraction: Proteomics 2004, 4, 78-83; Splitratio: splitless 25 purge  
+CHROMATOGRAPHY_TYPE: GC  
+INSTRUMENT_NAME: Agilent 6890N  
+ANALYSIS_TYPE: MS  
+INSTRUMENT_NAME: Leco Pegasus III GC TOF  
+INSTRUMENT_TYPE: GC-TOF  
+MS_TYPE: EI  
+MS:ION_MODE: POSITIVE  
+MS_METABOLITE_DATA:UNITS: Peak height  
+
+", file = "metabolites_samples_meta.md", append = TRUE)
+
+# Añadimos el segundo dataframe de datos de las muestras
+write.table(metadata_df, file = "metabolites_samples_meta.md", sep = "\t", 
+            row.names = TRUE, col.names = NA, quote = FALSE, append = TRUE)
+```
+
+
+```{r}
+dim(SumExp)
+
+```
+```{r}
+head(assay(SumExp)) 
+
+```
+Resúmen estadistico de la matriz de datos del objeto SummaryExperiment
+
+```{r}
+summary(assay(SumExp))  
+```
+
+```{r}
+colnames(metabolites_matrix)
+
+```
+
+```{r}
+rownames(colData)
+```
+```{r}
+sum(is.na(assay(SumExp)))
+```
+Verificamos la distribución de los niveles de metabolitos en los datos experimentales.
+
+```{r}
+hist(as.numeric(assay(SumExp)), breaks = 50, main = "intensidad de los metabolitos", col = "blue")
+
+```
+Se puede ver que la distribución de losniveles de metabolitos no sigue una distribución normal. Por ello, necesitamos aplicar una normalización de los datos aplicando una transformación logaritmica que nos permitira  aplicar varios tests y analisis que exigen la normalidad de los datos como el analisis PCA. 
+
+
+```{r}
+log_intensities <- log1p((assay(SumExp)))  
+hist(log_intensities, breaks = 50, main = "Log-Transformed Metabolite Intensities", col = "green")
+```
+
+cálculo de la varianza entre metabolítos
+
+```{r}
+metabolite_var <- apply(log_intensities, 1, var)
+hist(metabolite_var, breaks = 50, main = "Varianza entre metabolitos", col = "red")
+
+```
+
+Para el estudio del efecto de la transplantación o no sobre los niveles de metabolitos, no conviene tener metabolitos con varianza de casi 0. Por ello, decidimos eliminar aquellos metabolitos con varianza que avoisina zero.
+
+```{r}
+high_var_metabolites <- metabolite_var > 1e-10
+filtered_log_intensities <- log_intensities[high_var_metabolites, ]
+```
+
+Verificamos si quedan metabolitos con zero varianza.
+
+
+```{r}
+sum(apply(filtered_log_intensities, 1, var) == 0)
+```
+desde el objeto SummarizedExperiment SumExp extraemos los nombres de las muestras y dependiendo de si se termina el nombre con una A o una B, se indica el status de la transplantación (After o Before)
+```{r}
+sample_names <- colnames(SumExp)
+```
+```{r}
+# Se crea la columna Transplantation en base de si el nombre se termina por A o B 
+transplantation_status <- ifelse(grepl("_A$", sample_names), "After", "Before")
+```
+
+```{r}
+# Actualizamos colData con la nueva columna que consiste en el estatus de la transplantación (Antes o Después). Se usa la función factor () para la variable categorica transplantation_status.
+colData(SumExp)$Transplantation <- factor(transplantation_status)
+```
+
+
+```{r}
+pca <- prcomp(t(filtered_log_intensities), scale. = TRUE)
+
+plot(pca$x[, 1], pca$x[, 2], col = as.factor(colData(SumExp)$Transplantation), pch = 19,
+     xlab = "PC1", ylab = "PC2", main = "PCA de los datos metabolicos post tranformación logaritmica")
+legend("topright", legend = levels(colData(SumExp)$Transplantation), 
+       col = 1:length(levels(colData(SumExp)$Transplantation)), pch = 19)
+```
+
+ Se visualizan los dos primeros componentes principales. Podemos ver de forma distinta según el grupo al que pertenecen. Esto da a entender que los cambios metabolicos son significativos. La disatncia entre puntos también refleja e grado de similitud entre perfiles metabolicos entre muetras diferentes. 
+ 
+ Otra forma de visualizar los componentes principales es con el Screeplt. Aqui pongo dos maneras de obtenerlo 
+ 
+```{r}
+pca <- prcomp(t(filtered_log_intensities), scale. = TRUE)
+var_explicada <- (pca$sdev)^2 / sum((pca$sdev)^2)
+library(ggplot2)
+
+qplot(1:length(var_explicada), var_explicada) + 
+  geom_line(color = "blue") + 
+  geom_point(size = 2, color = "blue") +
+  xlab("Componente principal") + 
+  ylab("Varianza explicada") +
+  ggtitle("Scree Plot") +
+  ylim(0, 1) +
+  theme_minimal()
+```
+
+
+```{r}
+plot(var_explicada, type = "b", 
+     xlab = "Componente Principal", 
+     ylab = "Proporción de la varianza explicada", 
+     main = "Scree Plot", 
+     pch = 19, col = "blue")
+
+varianza_acumulada<- cumsum(var_explicada)
+lines(varianza_acumulada, type = "b", col = "red", pch = 19)
+
+
+legend("topright", legend = c("Individual Variance", "Cumulative Variance"), 
+       col = c("blue", "red"), pch = 19, lty = 1)
+```
+
+En ambas figuras se puede observar una pendiente importante de la curba con los primeros componentes principales. Indicando que gran parte de la varianza está explicada por los primeros componentes. A partir del sexto componente ya no es necesario añadir más componentes.Con los 6 primeros componentes ya tenemos casi 83% de la varianza explicada, como se puede ver en el resumen d ela PCA.
+
+
+```{r}
+summary(pca)
+```
+
+```{r}
+class(filtered_log_intensities)
+```
+
+Podemos hacer el mapa de las intensidades de los matabolitos entre muestras. Se emplean las transformaciones logaritmicas de los niveles de metabolitos. Los metabolitos representados en rojo son los que tienen los niveles más altos. Con este mapa, se agrupan los metabolitos según los niveles de intensidad (árbol de la izquierda) de la misma manera se agrupan las muestras con niveles de metabolitos similares.
+
+```{r}
+library(pheatmap)
+pheatmap(filtered_log_intensities, scale = "row", cluster_cols = TRUE, cluster_rows = TRUE,
+         main = "Heatmap de agrupamiento jerárquico ")
+```
+
+
+Para el análisis de expresión diferencial y conel objetivo de identificar los metabólitos que difieren de manera significativa entre muestras provenientes de individuos transplantados y muestras de individuos que no han tenido transplante se usa el paquete limma.
+
+
+```{r}
+library(limma)
+```
+
+creamos la matriz de diseño 
+
+```{r}
+matriz_diseño <- model.matrix(~ colData(SumExp)$Transplantation)
+
+```
+
+elaboración del modelo para estimar de cuan difiere la intensidad de un metabolito entre muestras de antes y muestras de después de una transplantación 
+
+```{r}
+fit <- lmFit(filtered_log_intensities, matriz_diseño)
+
+```
+
+puesto que disponemos de pocas muestras, empleamos el "Empirical Bayes Smoothing" para mejorar la estimación de la varianza entre metabolitos 
+
+```{r}
+fit <- eBayes(fit)
+
+
+```
+
+Para identificar los metabolitos que cambian de manera significativa entre las dos condiciones, usamos la función topTable, el ajuste de
+
+```{r}
+metabo_signif <- topTable(fit, coef = 2, adjust = "BH", number = Inf)
+
+```
+
+los metabolitos que más se alteran 
+
+```{r}
+head(metabo_signif)
+
+```
+
+logFC corresponde al cambio logarítmico en los niveles de metabolitos entre muestras de individuos transplantados y muestras sin transplante. Los valores positivos corresponden a aumentos y los negativos a disminución. AveExp es la media de niveles del metabolito entre muestras. Valores altos corresponden ag ran cantidades del metabolito. el estadistico t permite ver cuán significativos son los cambios. Valores altos del estadistico t en valores absolutos indican unas diferencias muy significativas. Un P-value permite de testear la hipótesis nula de ausencia de diferencia entre los niveles de matabolitos entre las dos condiciones.
+
+
+Para un mejor visualización del fenómeno hacemos el Volcano plot para identificar los metabólitos más diferencialmente expresados. El volcano plot permite observar los metabolitos que al mismo tiempo que muestran alteraciones significativas, muestran alteraciones bien importantes.
+
+
+
+```{r}
+
+plot(metabo_signif$logFC, -log10(metabo_signif$adj.P.Val), 
+     pch = 20, col = ifelse(metabo_signif$adj.P.Val < 0.05 & abs(metabo_signif$logFC) > 1, "red", "gray"),
+     xlab = "Log Fold Change", ylab = "-log10(Adjusted P-Value)", 
+     main = "Volcano Plot de la expresión diferencial de los metabolitos")
+
+abline(h = -log10(0.05), col = "blue", lty = 2)
+abline(v = c(-1, 1), col = "darkgreen", lty = 2)  # definimos el threshold del LogFC
+# Etiquetamos los metabolitos significativamente incrementados
+significant <- which(metabo_signif$adj.P.Val < 0.05 & abs(metabo_signif$logFC) > 1)
+text(metabo_signif$logFC[significant], -log10(metabo_signif$adj.P.Val[significant]), 
+     labels = rownames(metabo_signif)[significant], pos = 3, cex = 0.4, col = "black")
+
+```
+
+Se puede observar con el Volcano plot que arriba a la derecha están los metabolitos que aumentan y de manera significativa entre las dos condiciones. Arriba a la izquierda están los que disminuyen de manera significativa y abajo en el centro están aquellos que no muestran cambios significativos.
+
+Para poder ver mejor a que metabolito corresponde cada punto en el mapa, hacemos el vulcano plot con los paquetes ggplot2 y ggrepel
+```{r}
+library(ggplot2)
+```
+
+```{r}
+library(ggrepel)
+```
+
+
+
+```{r}
+
+# Creamos la columna color en base de la  del grado de significación y del  logFC
+metabo_signif$color <- "Neutral"  # color por defecto
+
+# Upregulated (logFC > 1 y significativo)
+metabo_signif$color[metabo_signif$logFC > 1 & metabo_signif$adj.P.Val < 0.05] <- "Upregulated"
+
+# Downregulated (logFC < -1 and significativo)
+metabo_signif$color[metabo_signif$logFC < -1 & metabo_signif$adj.P.Val < 0.05] <- "Downregulated"
+
+# crear a columna etiqueta para metabolitos significativos
+metabo_signif$label <- ifelse(metabo_signif$adj.P.Val < 0.05, rownames(metabo_signif), NA)
+
+# Dibujamo el  volcano plot
+ggplot(metabo_signif, aes(x = logFC, y = -log10(adj.P.Val), color = color, label = label)) +
+  geom_point(size = 2) +  # Plot points
+  scale_color_manual(values = c("Neutral" = "gray", "Upregulated" = "red", "Downregulated" = "blue")) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +  
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "darkgreen") +  
+  geom_text_repel(aes(label = label), 
+                 box.padding = 0.5,       
+                 point.padding = 0.3,     
+                 min.segment.length = 0,  
+                 segment.color = "black", 
+                 size = 3,                
+                 max.overlaps = 15) +     
+  labs(title = "Volcano Plot de la expresión diferencial de metabolitos",
+       x = "Log Fold Change", 
+       y = "-log10(Adjusted P-Value)") +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
+
+
+
+ 
+
+
